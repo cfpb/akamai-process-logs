@@ -1,0 +1,2 @@
+netstorageapi==1.2.13
+tqdm==4.50.0
