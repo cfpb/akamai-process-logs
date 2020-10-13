@@ -27,6 +27,18 @@ credentials.
     --to-date=2020-09-30
 ```
 
+To then process those logs to count status codes:
+
+```
+./process.py *.gz
+```
+
+or to process only a single log file:
+
+```
+./process.py example_123456.abcdacbd.202010010000-0100-0.gz
+```
+
 ----
 
 ## Open source licensing info
