@@ -1,0 +1,123 @@
+#!/usr/bin/env python
+
+import argparse
+import gzip
+import os.path
+from collections import Counter
+
+import apachelogs
+
+from storage import (
+    DailyCountStorage,
+    MonthlyCountStorage,
+    QuarterlyCountStorage,
+    RawLogsStorage,
+)
+
+
+# http://httpd.apache.org/docs/current/mod/mod_log_config.html
+APACHE_LOG_FORMAT = (
+    '%h %l %u %t "%r" %>s %b "%{Referer}i" "%{User-Agent}i" "%{Cookie}i"'
+)
+
+
+class ApacheLogFileRedirectCounter:
+    def __init__(self):
+        self.count = Counter()
+        self.parser = apachelogs.LogParser(APACHE_LOG_FORMAT)
+
+    def update(self, filename):
+        with gzip.open(filename, "rt", errors="ignore") as f:
+            self.count.update(filter(None, map(self.parse_line, f)))
+
+    def parse_line(self, line):
+        try:
+            entry = self.parser.parse(line)
+        except apachelogs.InvalidEntryError:
+            return
+
+        path = entry.request_line.split(" ")[1]
+        status_code = entry.final_status
+
+        if status_code in (301, 302):
+            return path, status_code
+
+
+class RedirectCounter:
+    def count(self, overwrite=False):
+        raw_logs_storage = RawLogsStorage()
+        daily_count_storage = DailyCountStorage()
+
+        for day in raw_logs_storage.get_days():
+            key = daily_count_storage.get_key(day)
+            daily_filename = daily_count_storage.get_filename(day)
+
+            if os.path.exists(daily_filename) and not overwrite:
+                print(f"{key}: Counts already exist")
+                continue
+
+            print(f"{key}: Processing raw log files")
+            daily_counts = ApacheLogFileRedirectCounter()
+            for filename in raw_logs_storage.get_filenames_for_day(day):
+                print(f"{key}: Reading log file {filename}")
+                daily_counts.update(filename)
+
+            if not daily_count_storage.exists():
+                daily_count_storage.create()
+
+            print(f"{key}: Writing counts to {daily_filename}")
+            daily_count_storage.write(daily_counts.count, daily_filename)
+
+        monthly_count_storage = MonthlyCountStorage()
+
+        for day in daily_count_storage.get_complete_month_starts():
+            key = monthly_count_storage.get_key(day)
+            monthly_filename = monthly_count_storage.get_filename(day)
+
+            if os.path.exists(monthly_filename) and not overwrite:
+                print(f"{key}: Counts already exist")
+                continue
+
+            print(f"{key}: Processing daily count files")
+            monthly_counts = Counter()
+            for filename in daily_count_storage.get_filenames_for_month(day):
+                print(f"{key}: Reading log file {filename}")
+                daily_counts = daily_count_storage.read(filename)
+                monthly_counts += daily_counts
+
+            if not monthly_count_storage.exists():
+                monthly_count_storage.create()
+
+            print(f"{key}: Writing counts to {monthly_filename}")
+            monthly_count_storage.write(monthly_counts, monthly_filename)
+
+        quarterly_count_storage = QuarterlyCountStorage()
+
+        for day in monthly_count_storage.get_complete_quarter_starts():
+            key = quarterly_count_storage.get_key(day)
+            quarterly_filename = quarterly_count_storage.get_filename(day)
+
+            if os.path.exists(quarterly_filename) and not overwrite:
+                print(f"{key}: Counts already exist")
+                continue
+
+            quarterly_counts = Counter()
+            for filename in monthly_count_storage.get_filenames_for_quarter(day):
+                print(f"{key}: Reading log file {filename}")
+                monthly_counts = monthly_count_storage.read(filename)
+                quarterly_counts.update(monthly_counts)
+
+            print(f"{key}: Processing monthly count files")
+            if not quarterly_count_storage.exists():
+                quarterly_count_storage.create()
+
+            print(f"{key}: Writing counts to {quarterly_filename}")
+            quarterly_count_storage.write(quarterly_counts, quarterly_filename)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--overwrite", action="store_true")
+
+    counter = RedirectCounter()
+    counter.count(**vars(parser.parse_args()))

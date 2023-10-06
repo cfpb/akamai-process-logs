@@ -1,12 +1,16 @@
 #!/usr/bin/env python
 
 import argparse
+import os.path
 import re
 import xml.etree.ElementTree as ET
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from itertools import chain
 
 from akamai.netstorage import Netstorage
 from tqdm import tqdm
+
+from storage import DailyCountStorage, RawLogsStorage, generate_dates_between
 
 
 class DirectoryListing:
@@ -27,12 +31,8 @@ class DirectoryListing:
         # </stat>
         self.logs = [LogFile(f.get("name")) for f in tree.findall("file")]
 
-    def get_filenames(self, from_date, to_date=None):
-        return [
-            log.filename
-            for log in self.logs
-            if log.date >= from_date and log.date <= (to_date or from_date)
-        ]
+    def get_filenames(self, date):
+        return [log.filename for log in self.logs if log.date == date]
 
 
 class LogFile:
@@ -63,22 +63,64 @@ class LogFile:
 
 
 class Downloader:
-    def __init__(self, netstorage_hostname, netstorage_key, netstorage_keyname):
+    def __init__(
+        self,
+        since_days_ago,
+        netstorage_hostname,
+        netstorage_key,
+        netstorage_keyname,
+        netstorage_directory,
+    ):
+        self.since_days_ago = since_days_ago
+        self.end_date = datetime.utcnow().date() - timedelta(days=1)
+        self.start_date = self.end_date - timedelta(days=self.since_days_ago - 1)
+
+        # https://learn.akamai.com/en-us/webhelp/netstorage/netstorage-http-api-developer-guide/
         self.netstorage = Netstorage(
             netstorage_hostname, netstorage_keyname, netstorage_key, ssl=True
         )
 
-    def download(self, netstorage_directory, from_date, to_date=None):
-        dir_xml = self._call("dir", netstorage_directory, {"encoding": "utf-8"}).text
-
-        dir_listing = DirectoryListing(dir_xml)
-        filenames = dir_listing.get_filenames(from_date, to_date)
-
         if not netstorage_directory.endswith("/"):
             netstorage_directory += "/"
+        self.netstorage_directory = netstorage_directory
 
-        for filename in tqdm(filenames):
-            self._call("download", f"{netstorage_directory}{filename}")
+    def download(self):
+        netstorage_listing = self._get_netstorage_listing()
+
+        days_to_consider = list(generate_dates_between(self.start_date, self.end_date))
+        print(f"Considering {len(days_to_consider)} days")
+
+        raw_logs_storage = RawLogsStorage()
+        daily_count_storage = DailyCountStorage()
+
+        days_to_download = [
+            day for day in days_to_consider if not daily_count_storage.contains_day(day)
+        ]
+        filenames_to_download = list(
+            chain(*(netstorage_listing.get_filenames(day) for day in days_to_download))
+        )
+
+        print(
+            f"Downloading {len(filenames_to_download)} filenames for {len(days_to_download)} days"
+        )
+        if filenames_to_download:
+            if not raw_logs_storage.exists():
+                raw_logs_storage.create()
+
+            for filename in tqdm(filenames_to_download):
+                self._download(filename, raw_logs_storage.get_directory_name())
+
+    def _get_netstorage_listing(self):
+        return DirectoryListing(
+            self._call("dir", self.netstorage_directory, {"encoding": "utf-8"}).text
+        )
+
+    def _download(self, filename, destination_directory):
+        self._call(
+            "download",
+            f"{self.netstorage_directory}{filename}",
+            os.path.join(destination_directory, filename),
+        )
 
     def _call(self, method, *args):
         fn = getattr(self.netstorage, method)
@@ -87,29 +129,15 @@ class Downloader:
         return response
 
 
-DESCRIPTION = "foo"
-
-
-def parse_date(s):
-    return datetime.strptime(s, "%Y-%m-%d").date()
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        formatter_class=argparse.RawDescriptionHelpFormatter, description=DESCRIPTION
-    )
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "--from-date",
-        type=parse_date,
-        help="Download logs starting from this date, e.g. 2020-01-01",
+        "--since-days-ago",
+        type=int,
+        default=120,
+        help="Download since this many days ago (default: %(default)s)",
     )
-    parser.add_argument(
-        "--to-date",
-        type=parse_date,
-        help="Download logs starting from this date, e.g. 2020-02-01",
-    )
-
     parser.add_argument(
         "--netstorage-hostname",
         help="NetStorage HTTP API connection hostname",
@@ -127,15 +155,5 @@ def main():
         required=True,
     )
 
-    args = parser.parse_args()
-
-    # https://learn.akamai.com/en-us/webhelp/netstorage/netstorage-http-api-developer-guide/
-    downloader = Downloader(
-        args.netstorage_hostname, args.netstorage_key, args.netstorage_keyname
-    )
-
-    downloader.download(args.netstorage_directory, args.from_date, args.to_date)
-
-
-if __name__ == "__main__":
-    main()
+    downloader = Downloader(**vars(parser.parse_args()))
+    downloader.download()

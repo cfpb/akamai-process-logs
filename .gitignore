@@ -76,3 +76,11 @@ bower_components/
 .grunt/
 src/vendor/
 dist/
+
+# Project-specific files
+########################
+# We don't want to commit raw Apache logs or aggregated count files.
+raw_logs
+daily
+monthly
+quarterly

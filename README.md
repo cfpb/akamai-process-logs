@@ -23,8 +23,7 @@ credentials.
     --netstorage-key=abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcda \
     --netstorage-keyname=myusername
     --netstorage-directory=/123456/www.example.com/ \
-    --from-date=2020-09-01 \
-    --to-date=2020-09-30
+    [--since-days-ago=120]
 ```
 
 To then process those logs to count status codes:
@@ -37,6 +36,12 @@ or to process only a single log file:
 
 ```
 ./process.py example_123456.abcdacbd.202010010000-0100-0.gz
+```
+
+To process those files and generate aggregated redirect counts for day, month, and quarter:
+
+```
+./count_redirects.py
 ```
 
 ----
