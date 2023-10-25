@@ -110,7 +110,7 @@ class Downloader:
             if not raw_logs_storage.exists():
                 raw_logs_storage.create()
 
-            for filename in tqdm(filenames_to_download):
+            for filename in tqdm(filenames_to_download, disable=None):
                 self._download(filename, raw_logs_storage.get_directory())
 
     def _get_netstorage_listing(self):
