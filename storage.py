@@ -23,13 +23,19 @@ def get_last_day_of_month(year, month):
 
 
 class Storage:
+    def __init__(self, root_directory=None):
+        self.root_directory = root_directory or "."
+
     def exists(self):
-        return os.path.exists(self.get_directory_name()) and os.path.isdir(
-            self.get_directory_name()
+        return os.path.exists(self.get_directory()) and os.path.isdir(
+            self.get_directory()
         )
 
     def create(self):
-        return os.mkdir(self.get_directory_name())
+        return os.mkdir(self.get_directory())
+
+    def get_directory(self):
+        return os.path.join(self.root_directory, self.get_directory_name())
 
     def get_directory_name(self):
         raise NotImplementedError("Implemented in subclasses")
@@ -46,8 +52,8 @@ class Storage:
             return []
 
         return [
-            os.path.join(self.get_directory_name(), filename)
-            for filename in sorted(os.listdir(self.get_directory_name()))
+            os.path.join(self.get_directory(), filename)
+            for filename in sorted(os.listdir(self.get_directory()))
             if self.filename_re.match(filename)
         ]
 
@@ -89,7 +95,7 @@ class RawLogsStorage(Storage):
 
 class CountStorage(Storage):
     def get_filename(self, day):
-        return os.path.join(self.get_directory_name(), self.get_key(day) + ".csv")
+        return os.path.join(self.get_directory(), self.get_key(day) + ".csv")
 
     def contains_day(self, day):
         return day in self.get_days()

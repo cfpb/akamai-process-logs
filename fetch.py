@@ -70,6 +70,7 @@ class Downloader:
         netstorage_key,
         netstorage_keyname,
         netstorage_directory,
+        local_storage_directory,
     ):
         self.since_days_ago = since_days_ago
         self.end_date = datetime.utcnow().date() - timedelta(days=1)
@@ -84,14 +85,16 @@ class Downloader:
             netstorage_directory += "/"
         self.netstorage_directory = netstorage_directory
 
+        self.local_storage_directory = local_storage_directory
+
     def download(self):
         netstorage_listing = self._get_netstorage_listing()
 
         days_to_consider = list(generate_dates_between(self.start_date, self.end_date))
         print(f"Considering {len(days_to_consider)} days")
 
-        raw_logs_storage = RawLogsStorage()
-        daily_count_storage = DailyCountStorage()
+        raw_logs_storage = RawLogsStorage(self.local_storage_directory)
+        daily_count_storage = DailyCountStorage(self.local_storage_directory)
 
         days_to_download = [
             day for day in days_to_consider if not daily_count_storage.contains_day(day)
@@ -108,7 +111,7 @@ class Downloader:
                 raw_logs_storage.create()
 
             for filename in tqdm(filenames_to_download):
-                self._download(filename, raw_logs_storage.get_directory_name())
+                self._download(filename, raw_logs_storage.get_directory())
 
     def _get_netstorage_listing(self):
         return DirectoryListing(
@@ -153,6 +156,9 @@ if __name__ == "__main__":
         "--netstorage-directory",
         help="NetStorage log file directory, e.g. /123456/www.example.com",
         required=True,
+    )
+    parser.add_argument(
+        "--local-storage-directory", help="Optional path to local file storage"
     )
 
     downloader = Downloader(**vars(parser.parse_args()))

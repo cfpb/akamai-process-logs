@@ -44,9 +44,9 @@ class ApacheLogFileRedirectCounter:
 
 
 class RedirectCounter:
-    def count(self, overwrite=False):
-        raw_logs_storage = RawLogsStorage()
-        daily_count_storage = DailyCountStorage()
+    def count(self, overwrite, local_storage_directory):
+        raw_logs_storage = RawLogsStorage(local_storage_directory)
+        daily_count_storage = DailyCountStorage(local_storage_directory)
 
         for day in raw_logs_storage.get_days():
             key = daily_count_storage.get_key(day)
@@ -68,7 +68,7 @@ class RedirectCounter:
             print(f"{key}: Writing counts to {daily_filename}")
             daily_count_storage.write(daily_counts.count, daily_filename)
 
-        monthly_count_storage = MonthlyCountStorage()
+        monthly_count_storage = MonthlyCountStorage(local_storage_directory)
 
         for day in daily_count_storage.get_complete_month_starts():
             key = monthly_count_storage.get_key(day)
@@ -91,7 +91,7 @@ class RedirectCounter:
             print(f"{key}: Writing counts to {monthly_filename}")
             monthly_count_storage.write(monthly_counts, monthly_filename)
 
-        quarterly_count_storage = QuarterlyCountStorage()
+        quarterly_count_storage = QuarterlyCountStorage(local_storage_directory)
 
         for day in monthly_count_storage.get_complete_quarter_starts():
             key = quarterly_count_storage.get_key(day)
@@ -118,6 +118,9 @@ class RedirectCounter:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--local-storage-directory", help="Optional path to local file storage"
+    )
 
     counter = RedirectCounter()
     counter.count(**vars(parser.parse_args()))
