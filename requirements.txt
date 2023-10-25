@@ -2,3 +2,4 @@ apachelogs==0.6.0
 mrjob==0.7.4
 netstorageapi==1.2.13
 tqdm==4.50.0
+urllib3<2
