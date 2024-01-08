@@ -3,9 +3,10 @@
 import argparse
 import gzip
 import os.path
+import re
 from collections import Counter
 
-import apachelogs
+from apachelogs.directives import format2regex
 
 from storage import (
     DailyCountStorage,
@@ -16,28 +17,28 @@ from storage import (
 
 
 # http://httpd.apache.org/docs/current/mod/mod_log_config.html
-APACHE_LOG_FORMAT = (
-    '%h %l %u %t "%r" %>s %b "%{Referer}i" "%{User-Agent}i" "%{Cookie}i"'
-)
+APACHE_LOG_FORMAT = '%h %l %u %t "%r" %>s'
 
 
 class ApacheLogFileRedirectCounter:
     def __init__(self):
         self.count = Counter()
-        self.parser = apachelogs.LogParser(APACHE_LOG_FORMAT)
+        self.group_defs, self.regex = format2regex(APACHE_LOG_FORMAT)
+        self.regex = re.compile(self.regex + " .*")
 
     def update(self, filename):
         with gzip.open(filename, "rt", errors="ignore") as f:
             self.count.update(filter(None, map(self.parse_line, f)))
 
     def parse_line(self, line):
-        try:
-            entry = self.parser.parse(line)
-        except apachelogs.InvalidEntryError:
-            return
+        m = self.regex.match(line)
 
-        path = entry.request_line.split(" ")[1]
-        status_code = entry.final_status
+        try:
+            path = m.group(5).split(" ")[1]
+            status_code = int(m.group(6))
+        except (TypeError, ValueError):
+            print(f"Warning! Could not parse: {line}")
+            return
 
         if status_code in (301, 302):
             return path, status_code
